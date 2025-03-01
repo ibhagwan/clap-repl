@@ -5,6 +5,8 @@ use console::style;
 
 // reexport reedline to prevent version mixups
 pub use reedline;
+#[cfg(feature = "async")]
+use reedline::DefaultPrompt;
 use reedline::{Prompt, Reedline, Signal, Span};
 use shlex::Shlex;
 
@@ -119,6 +121,35 @@ impl<C: Parser + Send + Sync + 'static> ClapEditor<C> {
         loop {
             match self.read_command() {
                 ReadCommandOutput::Command(c) => handler(c),
+                ReadCommandOutput::EmptyLine => (),
+                ReadCommandOutput::ClapError(e) => {
+                    e.print().unwrap();
+                }
+                ReadCommandOutput::ShlexError => {
+                    println!(
+                        "{} input was not valid and could not be processed",
+                        style("Error:").red().bold()
+                    );
+                }
+                ReadCommandOutput::ReedlineError(e) => {
+                    panic!("{e}");
+                }
+                ReadCommandOutput::CtrlC => continue,
+                ReadCommandOutput::CtrlD => break,
+            }
+        }
+    }
+
+    #[cfg(feature = "async")]
+    pub async fn repl_async(mut self, mut handler: impl AsyncFnMut(C) -> Option<DefaultPrompt>) {
+        loop {
+            match self.read_command() {
+                ReadCommandOutput::Command(c) => {
+                    let maybe_prompt = handler(c).await;
+                    if let Some(prompt) = maybe_prompt {
+                        self.prompt = Box::new(prompt);
+                    }
+                }
                 ReadCommandOutput::EmptyLine => (),
                 ReadCommandOutput::ClapError(e) => {
                     e.print().unwrap();
